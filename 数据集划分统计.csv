@@ -1,0 +1,4 @@
+class,train_num,val_num,test_num,total
+covid-19,2169,723,724,3616
+normal,6115,2038,2039,10192
+viral_pneumonia,807,269,269,1345
