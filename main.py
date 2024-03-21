@@ -1,73 +1,46 @@
-import time
 import os
-import matplotlib.pyplot as plt
-import numpy as np
 from tqdm import tqdm
-from torchvision import  transforms
+##设置内存分配
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 import torch
-import torchvision
 import torch.nn as nn
-import torch.nn.functional as F
 from torchvision import models
 import torch.optim as optim
+from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 import temp_torch_home
 import set_device
 import set_chat
 import data_load
 import generate_index
+import init_log
 import warnings
+import wandb
+from train_val import train_one_batch
+from train_val import val
+
+
 warnings.filterwarnings("ignore")
 
 def main():
     ##配置缓存路径
     temp_torch_home.temp_torch_home()
-    # 忽略烦人的红色提示
+    ##忽略烦人的红色提示
     os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
     ##可视化图表
-    device = set_chat.set_chat()
+    set_chat.set_chat()
     ##设置计算硬件
-    set_device.set_device()
+    device = set_device.set_device()
+    print('使用的计算硬件是', device)
     ##载入图像分类数据集
-    train_dataset,val_dataset,test_dataset,class_num = data_load.data_load()
+    train_dataset,val_dataset,test_dataset,class_num = data_load.data_load('little_slipt_dataset')
     ##创建映射索引
     generate_index.generate_index(train_dataset)
 
-    BATCH_SIZE = 32
+    BATCH_SIZE = 8
     train_loader = DataLoader(train_dataset,batch_size=BATCH_SIZE,shuffle=True,num_workers=4)
     val_loader = DataLoader(val_dataset,batch_size=BATCH_SIZE,shuffle=True,num_workers=4)
     test_loader = DataLoader(test_dataset,batch_size=BATCH_SIZE,shuffle=True,num_workers=4)
-
-    images,labels =next(iter(train_loader))
-    print(images.shape,labels)
-    ##将tensor转为array
-    images = images.numpy()
-    ##绘图，显示该例图片的像素值分布
-    plt.hist(images[2].flatten(),bins=50)
-    plt.show()
-    # batch 中经过预处理的图像
-    idx = 2
-    plt.imshow(images[idx].transpose((1, 2, 0)))  # 转为(224, 224, 3)
-    plt.title('处理后图像label:' + str(labels[idx].item()))
-    label = labels[idx].item()
-    plt.show()
-
-
-    ##加载npy文件
-    data = np.load('idx_to_labels.npy', allow_pickle=True)
-    idx_to_labels = data.item()
-    pred_classname = idx_to_labels[label]
-    # 原始图像
-    idx = 2
-    mean = np.array([0.485, 0.456, 0.406])
-    std = np.array([0.229, 0.224, 0.225])
-    '''
-    testa = np.clip(images[idx].transpose((1, 2, 0)) * std + mean,0,1)
-    print(testa)
-    '''
-    plt.imshow(np.clip(images[idx].transpose((1, 2, 0)) * std + mean,0,1))
-    plt.title('原图像label:' + pred_classname)
-    plt.show()
     ##载入预训练模型
     vgg16 = models.vgg16(weights=False)
     weights = torch.load('torch/hub/checkpoints/vgg16-397923af.pth')
@@ -80,52 +53,52 @@ def main():
     criterion = nn.CrossEntropyLoss()
     # 训练轮次 Epoch
     EPOCHS = 20
-    '''
-    ##训练一个batch
-    images, labels = next(iter(train_loader))
-    images = images.to(device)
-    labels = labels.to(device)
-    outputs = vgg16(images)
-    # 由 logit，计算当前 batch 中，每个样本的平均交叉熵损失函数值
-    loss = criterion(outputs, labels)
-    # 反向传播“三部曲”
-    optimizer.zero_grad()  # 清除梯度
-    loss.backward()  # 反向传播
-    optimizer.step()  # 优化更新
-    # 获得当前 batch 所有图像的预测类别
-    _, preds = torch.max(outputs, 1)
-    print(loss,preds)
-    total = 0
-    correct = 0
-    total += labels.size(0)
-    correct += (preds == labels).sum()  # 预测正确样本个数
-    print('准确率为 {:.3f} %'.format(100 * correct / total))
-    '''
-    ##遍历每个EPOCH
-    for epoch in tqdm(range(EPOCHS)):
-        vgg16.train()##调整为训练模式
-        for images,labels in train_loader:
-            images = images.to(device)
-            labels = labels.to(device)
-            outputs = vgg16(images)##前向预测
-            loss = criterion(outputs,labels)
-            optimizer.zero_grad()##清除梯度
-            loss.backward()##反向传播
-            optimizer.step()##更新优化
+    ##学习率下降策略
+    lr_scheduler_1 = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+    ##训练前设置
+    epoch = 0
+    batch_idx = 0
+    best_val_accuracy = 0##用于迭代
+    ##初始化训练日志和验证日志
+    log_train,tab_train_log = init_log.init_train_log(train_loader,device,vgg16,criterion,optimizer,epoch,batch_idx)
+    log_val, tab_val_log = init_log.init_val_log(val_loader,device,vgg16,criterion,epoch)
+    ##训练可视化
+    wandb.init(project='VGG+', name='248a(base_test_2)')
+    ##循环训练
+    for epoch in range(1, EPOCHS + 1):
 
-    vgg16.eval()##切换为评估模式
-    with torch.no_grad():
-        correct = 0
-        total = 0
-        for images, labels in tqdm(val_loader):  # 获取测试集的一个 batch，包含数据和标注
-            images = images.to(device)
-            labels = labels.to(device)
-            outputs = vgg16(images)  # 前向预测，获得当前 batch 的预测置信度
-            _, preds = torch.max(outputs, 1)  # 获得最大置信度对应的类别，作为预测结果
-            total += labels.size(0)
-            correct += (preds == labels).sum()  # 预测正确样本个数
-        print('验证集上的准确率为 {:.3f} %'.format(100 * correct / total))
-    torch.save(vgg16, 'torch/hub/checkpoints/vgg248')
+        print(f'Epoch {epoch}/{EPOCHS}')
+
+        ## 训练阶段
+        vgg16.train()
+        for images, labels in tqdm(train_loader):  # 获得一个 batch 的数据和标注
+            batch_idx += 1
+            log_train = train_one_batch(images, labels,device,vgg16,criterion,optimizer,epoch,batch_idx)
+            tab_train_log = tab_train_log._append(log_train, ignore_index=True)
+            wandb.log(log_train)
+        lr_scheduler_1.step() ##学习率下降策略
+        ## 测试阶段
+        vgg16.eval()
+        log_val = val(val_loader,device,vgg16,criterion,epoch)
+        tab_val_log = tab_val_log._append(log_val, ignore_index=True)
+        wandb.log(log_val)
+
+        # 保存最新的最佳模型文件
+        if log_val['val_accuracy'] > best_val_accuracy:
+            # 删除旧的最佳模型文件(如有)
+            old_best_checkpoint_path = 'torch/hub/checkpoints/best-{:.4f}.pth'.format(best_val_accuracy)
+            if os.path.exists(old_best_checkpoint_path):
+                os.remove(old_best_checkpoint_path)
+            # 保存新的最佳模型文件
+            best_val_accuracy = log_val['val_accuracy']
+            new_best_checkpoint_path = 'torch/hub/checkpoints/best-{:.4f}.pth'.format(log_val['val_accuracy'])
+            torch.save(vgg16, new_best_checkpoint_path)
+            print('保存新的最佳模型', 'checkpoint/best-{:.4f}.pth'.format(best_val_accuracy))
+            # best_val_accuracy = log_test['val_accuracy']
+
+
+    tab_train_log.to_csv('log/训练日志248a.csv', index=False)
+    tab_val_log.to_csv('log/验证日志248a.csv', index=False)
 
 if __name__ == '__main__':
     main()

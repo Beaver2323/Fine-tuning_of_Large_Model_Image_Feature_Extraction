@@ -4,10 +4,10 @@ import random
 import pandas as pd
 
 
-def data_split():
+def little_data_split():
     dataset_path = 'dataset'
     dataset_name = dataset_path
-    new_dataset_path = 'slipt_dataset'
+    new_dataset_path = 'little_slipt_dataset'
     print('使用的数据集:',dataset_name)
     ##提取数据集中的类别，输出类别数量
     classes = os.listdir(dataset_path)
@@ -22,9 +22,9 @@ def data_split():
     if not os.path.exists(os.path.join(new_dataset_path,'test')):
         os.mkdir(os.path.join(new_dataset_path,'test'))
     ##各集合的比例
-    test_frac = 0.2
-    train_frac = 0.6
-    val_frac=0.2
+    test_frac = 0.02
+    train_frac = 0.06
+    val_frac=0.02
     random.seed(123)##随机数种子,以便于复现
     tab = pd.DataFrame()##新建一个数据结构，用于等会存储分类文件
     print('{:^18} {:^18} {:^18} {:^18}'.format('类别','训练集个数','验证集个数','测试集个数'))
@@ -35,9 +35,10 @@ def data_split():
         ##划分训练集和测试集
         train_num = int(len(image_filename)*train_frac)
         val_num = int(len(image_filename)*val_frac)
+        test_num = int(len(image_filename)*test_frac)
         train_data = image_filename[:train_num] ##数据集的前train_num个元素作为训练集
-        val_data = image_filename[train_num:train_num + val_num] ##
-        test_data = image_filename[train_num + val_num:]
+        val_data = image_filename[train_num:train_num + val_num]
+        test_data = image_filename[train_num + val_num:train_num + val_num + test_num]
         ##切片操作左闭右开！！！！！！！！不会产生交集
         ##生成三种集合
         for image in train_data:
@@ -69,4 +70,8 @@ def data_split():
         new_row = pd.DataFrame({'class': [l_class], 'train_num': [len(train_data)], 'val_num': [len(val_data)], 'test_num': [len(test_data)]})
         tab = pd.concat([tab, new_row], ignore_index=True)
     tab['total'] = tab['train_num'] + tab['val_num'] + tab['test_num']
-    tab.to_csv('数据集划分统计.csv', index=False)##表示在保存CSV文件时不包含DataFrame的索引（行号）
+    tab.to_csv('缩小数据集划分统计.csv', index=False)##表示在保存CSV文件时不包含DataFrame的索引（行号）
+
+
+if __name__ == "__main__":
+    little_data_split()

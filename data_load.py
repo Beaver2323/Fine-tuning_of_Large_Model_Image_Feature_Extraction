@@ -3,8 +3,8 @@ from torchvision import datasets
 import image_preprocess
 ##配置三集合路径
 
-def data_load():
-    dataset_path = 'slipt_dataset'
+def data_load(dataset_path):
+    ##dataset_path = 'slipt_dataset'
     train_path = os.path.join(dataset_path,'train')
     val_path = os.path.join(dataset_path,'val')
     test_path = os.path.join(dataset_path,'test')
